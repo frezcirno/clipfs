@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <libclipboard.h>
 
-clipboard_c *clip;
+clipboard_c *cb;
 
 clipboard_opts clipfs_opts;
 
@@ -21,14 +21,14 @@ static void *clipfs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
 	cfg->kernel_cache = 1;
 
-	clip = clipboard_new(&clipfs_opts);
+	cb = clipboard_new(&clipfs_opts);
 
 	return NULL;
 }
 
 static void clipfs_destroy(void *userdata)
 {
-	clipboard_free(clip);
+	clipboard_free(cb);
 }
 
 static int clipfs_getattr(const char *path, struct stat *stbuf,
@@ -47,10 +47,9 @@ static int clipfs_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_uid = getuid();
 		stbuf->st_gid = getgid();
 
-		char *cliptext =
-			clipboard_text_ex(clip, &length, LCB_CLIPBOARD);
+		char *cliptext = clipboard_text_ex(cb, &length, LCB_CLIPBOARD);
 		if (!cliptext)
-			return -EIO;
+			length = 0;
 		free(cliptext);
 
 		stbuf->st_size = length;
@@ -86,18 +85,18 @@ static int clipfs_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
 	char *cliptext;
-	int clipfs_size;
+	int length;
 
 	if (strcmp(path, clipfs_path) != 0)
 		return -ENOENT;
 
-	cliptext = clipboard_text_ex(clip, &clipfs_size, LCB_CLIPBOARD);
+	cliptext = clipboard_text_ex(cb, &length, LCB_CLIPBOARD);
 	if (!cliptext)
 		return -EIO;
 
-	if (offset < clipfs_size) {
-		if (offset + size > clipfs_size)
-			size = clipfs_size - offset;
+	if (offset < length) {
+		if (offset + size > length)
+			size = length - offset;
 		memcpy(buf, cliptext + offset, size);
 	} else
 		size = 0;
@@ -109,13 +108,45 @@ static int clipfs_read(const char *path, char *buf, size_t size, off_t offset,
 static int clipfs_write(const char *path, const char *buf, size_t size,
 			off_t offset, struct fuse_file_info *fi)
 {
+	int length;
+	char *cliptext;
+
 	if (strcmp(path, clipfs_path) != 0)
 		return -ENOENT;
 
-	bool rv = clipboard_set_text_ex(clip, buf, size, LCB_CLIPBOARD);
-	if (!rv)
-		return -EIO;
+	cliptext = clipboard_text_ex(cb, &length, LCB_CLIPBOARD);
+	if (!cliptext) {
+		length = offset + size;
+		cliptext = malloc(length);
+		if (!cliptext) {
+			size = -ENOMEM;
+			goto err_nofree;
+		}
+		memset(cliptext, ' ', offset);
+	}
 
+	if (offset + size > length) {
+		char *newtext = malloc(offset + size);
+		if (!newtext) {
+			size = -ENOMEM;
+			goto err;
+		}
+		memcpy(newtext, cliptext, length);
+		memset(newtext + length, ' ', offset - length);
+		cliptext = newtext;
+		length = offset + size;
+	}
+
+	memcpy(cliptext + offset, buf, size);
+
+	bool rv = clipboard_set_text_ex(cb, cliptext, length, LCB_CLIPBOARD);
+	if (!rv)
+		size = -EIO;
+
+err:
+	free(cliptext);
+
+err_nofree:
 	return size;
 }
 
