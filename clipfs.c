@@ -123,17 +123,18 @@ static int clipfs_write(const char *path, const char *buf, size_t size,
 			goto err_nofree;
 		}
 		memset(cliptext, ' ', offset);
-	}
-
-	if (offset + size > length) {
+	} else if (offset + size > length) {
 		char *newtext = malloc(offset + size);
 		if (!newtext) {
 			size = -ENOMEM;
 			goto err;
 		}
 		memcpy(newtext, cliptext, length);
-		memset(newtext + length, ' ', offset - length);
+		free(cliptext);
+
 		cliptext = newtext;
+		if (offset > length)
+			memset(cliptext + length, ' ', offset - length);
 		length = offset + size;
 	}
 
