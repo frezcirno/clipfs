@@ -136,6 +136,9 @@ static int clipfs_write(const char *path, const char *buf, size_t size,
 		if (offset > length)
 			memset(cliptext + length, ' ', offset - length);
 		length = offset + size;
+	} else if (offset == 0) {
+		// if we're writing at the beginning, truncate the clipboard first
+		length = size;
 	}
 
 	memcpy(cliptext + offset, buf, size);
