@@ -26,6 +26,14 @@ $ ./clipfs $CLIPFS
 $ ln -s $CLIPFS/clip $HOME/clip
 ```
 
+# Stop
+
+```bash
+$ killall clipfs
+$ umount /run/user/$(id -u)/clipfs
+$ rm $HOME/clip
+```
+
 # Usage
 
 1. Ctrl-C to copy any text.
